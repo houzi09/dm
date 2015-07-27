@@ -1,0 +1,340 @@
+
+http://zh.scala-tour.com/
+http://blog.csdn.net/mrseasons/article/details/45869289
+-----------------------
+
+柯里化(Currying)技术。
+
+def add(x:Int, y:Int) = x + y
+是普通的函数
+
+def add(x:Int) = (y:Int) => x + y
+是柯里化后的函数，相当于返回一个匿名函数表达式。
+
+def add(x:Int)(y:Int) = x + y
+ 
+ 
+ 
+
+def withClose[A <: { def close(): Unit }, B](closeAble: A)
+  (f: A => B): B =
+  try {
+    f(closeAble)
+  } finally {
+    closeAble.close()
+  }
+class Connection {
+  def close() = println("close Connection")
+}
+val conn: Connection = new Connection()
+val msg = withClose(conn) { conn =>
+  {
+    println("do something with Connection")
+    "123456"
+  }
+}
+
+println(msg)
+
+
+
+
+
+trait ForEachAble[A] {
+  def iterator: java.util.Iterator[A]
+  def foreach(f: A => Unit) = {
+    val iter = iterator
+    while (iter.hasNext)
+      f(iter.next)
+  }
+}
+
+trait JsonAble {
+  def toJson() =
+    scala.util.parsing.json.JSONFormat.defaultFormatter(this)
+}
+
+val list = new java.util.ArrayList[Int]() with ForEachAble[Int]  with JsonAble
+list.add(1); list.add(2)
+
+println("For each: "); list.foreach(x => println(x))
+println("Json: " + list.toJson())
+
+
+
+
+
+
+
+
+
+val file = List("warn 2013 msg", "warn 2012 msg",
+  "error 2013 msg", "warn 2013 msg")
+
+def wordcount(str: String): Int = str.split(" ").count("msg" == _)
+
+def foldLeft(list: List[Int])(init: Int)(f: (Int, Int) => Int): Int = {
+  list match {
+    case List() => init
+    case head :: tail => foldLeft(tail)(f(init, head))(f)
+  }
+}
+
+val num = foldLeft(file.map(wordcount))(0)(_ + _)
+
+println("wordcount:" + num)
+
+
+
+
+
+
+class ScalaCurrentVersion(val url: String) {
+  lazy val source= {
+    println("fetching from url...")
+    scala.io.Source.fromURL(url).getLines().toList
+  }
+  lazy val majorVersion = source.find(_.contains("version.major"))
+  lazy val minorVersion = source.find(_.contains("version.minor"))
+}
+
+val version = new ScalaCurrentVersion(
+  "https://raw.github.com/scala/scala/master/build.number")
+println("get scala version from " + version.url)
+version.majorVersion.foreach(println _)
+version.minorVersion.foreach(println _)
+
+
+
+
+akka--------------------------
+http://blog.csdn.net/mrseasons/article/details/45869289
+
+import akka.actor.{ Actor, ActorSystem, Props }
+
+val system = ActorSystem()
+
+class EchoServer extends Actor {
+  def receive = {
+    case msg: String => println("echo " + msg)
+  }
+}
+
+val echoServer = system.actorOf(Props[EchoServer])
+echoServer ! "hi"
+
+system.shutdown
+
+
+
+
+
+
+
+
+
+import akka.actor.ActorDSL._
+import akka.actor.ActorSystem
+
+implicit val system = ActorSystem()
+
+// use actor construction in ActorDSL 
+val echoServer = actor(new Act {    
+  become {
+    case msg => println("echo " + msg)
+  }
+})
+echoServer ! "hi"
+system.shutdown
+
+
+
+
+
+ val s = "Hello"
+ val f: Future[String] = Future {
+   s + " future!"
+ }
+ f onSuccess {
+   case msg => println(msg)
+ }
+
+ 
+ 
+ 
+
+ 
+ 
+import akka.actor.ActorDSL._
+import akka.pattern.ask
+
+implicit val ec = scala.concurrent.ExecutionContext.Implicits.global
+implicit val system = akka.actor.ActorSystem()
+
+val versionUrl = "https://raw.github.com/scala/scala/master/starr.number"
+
+val fromURL = actor(new Act {
+  become {
+    case url: String => sender ! scala.io.Source.fromURL(url)
+      .getLines().mkString("\n")
+  }
+})
+
+val version = fromURL.ask(versionUrl)(akka.util.Timeout(5 * 1000))
+version onComplete {
+  case msg => println(msg); system.shutdown
+}
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+import akka.actor.{ Actor, ActorSystem, Props }
+import com.typesafe.config.ConfigFactory
+
+implicit val system = akka.actor.ActorSystem("RemoteSystem",
+  ConfigFactory.load.getConfig("remote"))
+class EchoServer extends Actor {
+  def receive = {
+    case msg: String => println("echo " + msg)
+  }
+}
+
+val server = system.actorOf(Props[EchoServer], name = "echoServer")
+
+val echoClient = system
+  .actorFor("akka://RemoteSystem@127.0.0.1:2552/user/echoServer")
+echoClient ! "Hi Remote"
+
+system.shutdown
+
+
+
+
+
+
+import scala.util.matching.Regex
+
+object Email {
+  def unapply(str: String) = new Regex("""(.*)@(.*)""")     //unapply 解构器
+    .unapplySeq(str).get match {
+    case user :: domain :: Nil => Some(user, domain)
+    case _ => None
+  }
+}
+
+"user@domain.com" match {
+  case Email(user, domain) => println(user + "@" + domain)
+}
+
+
+ 
+ 
+ 
+ 
+ 
+import scala.collection.mutable.WeakHashMap
+
+val cache = new WeakHashMap[Int, Int]           // cache
+def memo(f: Int => Int) = (x: Int) => cache.getOrElseUpdate(x, f(x))
+
+def fibonacci_(in: Int): Int = in match {
+  case 0 => 0;
+  case 1 => 1;
+  case n: Int => memo(fibonacci_)(n - 1) + memo(fibonacci_)(n - 2)
+}
+val fibonacci: Int => Int =  memo(fibonacci_)  // val fibonacci: Int 是 偏微函数
+
+val t1 = System.currentTimeMillis()
+println(fibonacci(40))
+println("it takes " + (System.currentTimeMillis() - t1) + "ms")
+
+val t2 = System.currentTimeMillis()
+println(fibonacci(40))
+println("it takes " + (System.currentTimeMillis() - t2) + "ms")
+
+
+
+
+
+
+import java.text.SimpleDateFormat
+
+implicit def strToDate(str: String) = new SimpleDateFormat("yyyy-MM-dd").parse(str)  
+//String自动转换为Date类型。隐式转换是实现DSL的重要工具。
+
+println("2013-01-01 unix time: " + "2013-01-01".getTime()/1000l)
+
+implicit关键字只能用来修饰方法、变量（参数)和伴随对象。
+修饰变量为 隐式参数。
+http://my.oschina.net/aiguozhe/blog/35968
+
+1.命名函数的参数可以声明为implicit,但implicit必须出现在首位,并且是对所有的参数有效，不能只给某些参数声明为implicit.
+2.如果你只想声明一个implicit，使用curry，如
+  def maxFunc(implicit i1: Int)(i2: Int) = i1 + i2
+3.匿名函数不能声明隐式参数，即不能这样写：
+  val f = (implicit s: String) => s+1
+
+
+
+
+
+
+import org.json4s._
+import org.json4s.JsonDSL._
+import org.json4s.jackson.JsonMethods._
+import java.util.Date
+
+case class Twitter(id: Long, text: String, publishedAt: Option[java.util.Date])
+
+var twitters = Twitter(1, "hello scala", Some(new Date())) ::
+  Twitter(2, "I like scala tour", None) :: Nil
+
+var json = ("twitters"
+  -> twitters.map(
+    t => ("id" -> t.id)
+      ~ ("text" -> t.text)
+      ~ ("published_at" -> t.publishedAt.toString())))     
+
+println(pretty(render(json)))        // 使用 DSL pretty, render 生成 Json。
+
+
+
+
+
+import org.specs2.mutable._         // 测试UT
+
+class FactorialSpec extends Specification {
+  args.report(color = false)
+
+  def factorial(n: Int) = (1 to n).reduce(_ * _)
+
+  "The 'Hello world' string" should {
+    "factorial 3 must be 6" in {
+      factorial(3) mustEqual 6
+    }
+    "factorial 4 must greaterThan 6" in {
+      factorial(4) must greaterThan(6)
+    } 
+  }
+}
+specs2.run(new FactorialSpec)
+
+
+
+
+---------------------------------------
+
+val l1 = List((1,"a"),(3,"b"))
+val l2 = List((3,"a"),(4,"c"))
+
+要求：
+l3 = List((4,"a"),(3,"b"),(4,"c"))
+
+实现：
+(l1 ++ l2).groupBy(_._2).mapValues(_.map(_._1).sum)
+
