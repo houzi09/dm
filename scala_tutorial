@@ -1,4 +1,7 @@
 
+
+
+
 http://zh.scala-tour.com/
 http://blog.csdn.net/mrseasons/article/details/45869289
 -----------------------
@@ -264,20 +267,10 @@ println("it takes " + (System.currentTimeMillis() - t2) + "ms")
 
 import java.text.SimpleDateFormat
 
-implicit def strToDate(str: String) = new SimpleDateFormat("yyyy-MM-dd").parse(str)  
-//String自动转换为Date类型。隐式转换是实现DSL的重要工具。
+implicit def strToDate(str: String) = 
+  new SimpleDateFormat("yyyy-MM-dd").parse(str)         //String自动转换为Date类型。隐式转换是实现DSL的重要工具。
 
 println("2013-01-01 unix time: " + "2013-01-01".getTime()/1000l)
-
-implicit关键字只能用来修饰方法、变量（参数)和伴随对象。
-修饰变量为 隐式参数。
-http://my.oschina.net/aiguozhe/blog/35968
-
-1.命名函数的参数可以声明为implicit,但implicit必须出现在首位,并且是对所有的参数有效，不能只给某些参数声明为implicit.
-2.如果你只想声明一个implicit，使用curry，如
-  def maxFunc(implicit i1: Int)(i2: Int) = i1 + i2
-3.匿名函数不能声明隐式参数，即不能这样写：
-  val f = (implicit s: String) => s+1
 
 
 
@@ -338,3 +331,118 @@ l3 = List((4,"a"),(3,"b"),(4,"c"))
 实现：
 (l1 ++ l2).groupBy(_._2).mapValues(_.map(_._1).sum)
 
+
+
+
+  test("aggregate") {
+    val pairs = sc.makeRDD(Array(("a", 1), ("b", 2), ("a", 2), ("c", 5), ("a", 3)))
+    type StringMap = HashMap[String, Int]
+    val emptyMap = new StringMap {
+      override def default(key: String): Int = 0
+    }
+    val mergeElement: (StringMap, (String, Int)) => StringMap = (map, pair) => {
+      map(pair._1) += pair._2
+      map
+    }
+    val mergeMaps: (StringMap, StringMap) => StringMap = (map1, map2) => {
+      for ((key, value) <- map2) {
+        map1(key) += value
+      }
+      map1
+    }
+    val result = pairs.aggregate(emptyMap)(mergeElement, mergeMaps)
+    assert(result.toSet === Set(("a", 6), ("b", 2), ("c", 5)))
+  }
+
+
+  
+求平均值：  
+    sumCount = nums.aggregate((0, 0),
+        (lambda acc, value: (acc[0] + value, acc[1] + 1),
+            (lambda acc1, acc2: (acc1[0] + acc2[0], acc1[1] + acc2[1]))))
+    return sumCount[0] / float(sumCount[1])
+
+
+    
+PageRank------------    
+    
+// Assume that our neighbor list was saved as a Spark objectFile
+val links = sc.objectFile[(String, Seq[String])](“links”)
+    .partitionBy(new HashPartitioner(100))
+    .persist()
+    
+/*
+optimization-------------
+
+Notice that the links RDD is joined against ranks on each iteration. Since links is a
+static dataset, we partition it at the start with partitionBy(), so that it does not need
+to be shuffled across the network.    
+
+persist() on links to keep it in RAM across iterations.
+
+When we first create ranks, we use mapValues() instead of map() to preserve the
+partitioning of the parent RDD (links), so that our first join against it is cheap.
+
+reduceByKey() with mapValues(); because the result of reduceByKey() is already hash-partitioned, this will make it more efficient to join
+the mapped result against links on the next iteration.
+*/ 
+    
+// Initialize each page’s rank to 1.0; since we use mapValues, the resulting RDD
+// will have the same partitioner as links
+var ranks = links.mapValues(v => 1.0)
+
+// Run 10 iterations of PageRank
+for (i <- 0 until 10) {
+    val contributions = links.join(ranks).flatMap {
+        case (pageId, (links, rank)) =>
+        links.map(dest => (dest, rank / links.size))
+    }
+    ranks = contributions.reduceByKey((x, y) => x + y).mapValues(v => 0.15 + 0.85*v)
+}
+
+// Write out the final ranks
+ranks.saveAsTextFile(“ranks”)    
+    
+    
+    
+    
+
+
+
+class DomainNamePartitioner(numParts: Int) extends Partitioner {
+    override def numPartitions: Int = numParts
+    
+    override def getPartition(key: Any): Int = {
+        val domain = new Java.net.URL(key.toString).getHost()
+        val code = (domain.hashCode % numPartitions)
+        if (code < 0) {
+            code + numPartitions // Make it non-negative
+        } else {
+            code
+        }
+    }
+    
+    // Java equals method to let Spark compare our Partitioner objects
+    override def equals(other: Any): Boolean = other match {
+        case dnp: DomainNamePartitioner => dnp.numPartitions == numPartitions
+        case _ => false
+    }
+}
+
+
+
+
+
+spark 性能优化：-------------
+mapPartitions  mapPartitionsWithIndex
+flatMap
+coalesce
+
+spark.local.dir
+spark.serializer                        org.apache.spark.serializer.KryoSerializer     
+spark.shuffle.consolidateFiles    ext4 
+spark.default.parallelism
+spark.storage.memoryFraction
+估算GC回收情况（从task metric查看GC时间）
+--conf "spark.executor.extraJavaOptions=-verbose:gc -XX:+PrintGCDetails -XX:+PrintGCTimeStamps"
+http://stark-summer.iteye.com/blog/2179648
