@@ -1,6 +1,11 @@
 
+./debug-submit D:/app/spark-1.4.1-bin-hadoop2.4/lib/spark-examples-1.4.1-hadoop2.4.0.jar --class org.apache.spark.examples.SparkPi --master spark://localhost:7077
 
+class
+done < <("$RUNNER" -cp "$LAUNCH_CLASSPATH" org.apache.spark.launcher.Main -Xdebug -Xrunjdwp:transport=dt_socket,address=8000,server=y,suspend=y "$@")
 
+submit
+exec "$SPARK_HOME"/bin/debug-spark-class org.apache.spark.deploy.SparkSubmit "$@"
 
 http://zh.scala-tour.com/
 http://blog.csdn.net/mrseasons/article/details/45869289
