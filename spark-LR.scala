@@ -379,4 +379,66 @@ Accuracy: 0.8200643345396059
 Recall: 0.8074308666769658
 
 
+执行自带的spark例子，提交给Yarn执行
+#./bin/spark-submit --master yarn-cluster --class org.apache.spark.examples.SparkPi . /lib/spark-examples_2.10-1.3.0.jar
+
+执行spark-shell命令行
+#./bin/spark-shell				这是本地模式
+
+#./bin/spark-shell --master yarn --driver-memory 1G  --executor-memory 1G --executor-cores 2  --num-executors 2				这是利用yarn集群模式
+
+
 */
+
+
+// load csv to dataFrame
+
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.types._
+import org.apache.spark.sql._
+import org.apache.spark.sql.hive._
+
+def genDataFrame(hiveContext:HiveContext, csvPath:String, descPath:String, delimiter:String):DataFrame = {    
+    val desc = sc.textFile(descPath)
+    val namePattern = """(?<=\"name\":\")\w+""".r
+    val typePattern = """(?<=\"type\":\")\w+""".r  
+    val schema = StructType({desc.filter(_.contains("\"type\""))}.collect.map(col => {
+        val colName = namePattern.findFirstIn(col).get.trim()
+        val colType = typePattern.findFirstIn(col).get.trim()
+        StructField(colName,
+            colType match {
+                case "INTEGER" => LongType
+                case "REAL" => DoubleType
+                case "STRING" => StringType
+                case _ => StringType
+            })
+    }))   
+    val colTypes = schema.fields.map(_.dataType)
+    val csv = sc.textFile(csvPath).filter(line=> line.trim().length>0)
+    val rowRDD = csv.map(_.split(delimiter)).map(t=>Row({
+        for(i <- Range(0,colTypes.size)) yield if (t(i) == null || t(i).trim.isEmpty || t(i).trim.equalsIgnoreCase("null")) null
+        else {
+            colTypes(i) match {
+                case LongType =>  t(i).toString.trim().toLong
+                case DoubleType => t(i).toString.trim().toDouble
+                case StringType => t(i).toString.trim()
+                case _ => t(i).toString.trim()
+            }
+        }
+    }:_*))
+    hiveContext.createDataFrame(rowRDD, schema)
+}
+
+
+val csvPath="/tmp/test/community.csv"
+val descPath="/tmp/test/community.desc"
+val delimiter= "="
+val hiveContext = new org.apache.spark.sql.hive.HiveContext(sc)
+val df = genDataFrame(hiveContext, csvPath, descPath, delimiter)
+
+df.registerTempTable("user1_user2")
+hiveContext.sql("select * from user1_user2").show
+
+df.filter("weight > 0.5")
+
+
